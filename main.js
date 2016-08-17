@@ -35,17 +35,19 @@ new Promise( resolve => {
 	// Drag and Drop
 	( () => {
 		let item = null;
+
+		function getCoords(elem) {
+			let box = elem.getBoundingClientRect();
+			return {
+				top: box.top + pageYOffset,
+				left: box.left + pageXOffset
+			};
+		}
+
 		document.addEventListener('dragstart', e => {
 			item = e.target;
 			item.style.opacity = '0.4';
 			e.dataTransfer.setData('text', '');
-			function getCoords(elem) {
-				let box = elem.getBoundingClientRect();
-				return {
-					top: box.top + pageYOffset,
-					left: box.left + pageXOffset
-				};
-			}
 			let shiftX = e.pageX - getCoords(item).left,
 					shiftY = e.pageY - getCoords(item).top;
 			e.dataTransfer.setDragImage(e.target, shiftX, shiftY);
@@ -85,66 +87,72 @@ new Promise( resolve => {
 	}); 
 
 	// Saving the list
-	saveBtn.addEventListener('click', e => {
+	( () => {
 		function dataToJson(list) {
 			let friendsData = [];
 			for(let item of list) {
-				let img = item.firstElementChild,
-						fullName = img.nextElementSibling.textContent.split(' '),
+				let fullName = item.children.item(1).textContent.split(' '),
 						firstName = fullName[0],
 						lastName = fullName[1];
 				friendsData.push({
-					photo_50: img.getAttribute('src'),
 					first_name: firstName,
 					last_name: lastName 
 				});
 			}
 			return JSON.stringify(friendsData);
 		}
-		localStorage.setItem('filteredList', dataToJson(filteredList.children));
-		localStorage.setItem('defaultList', dataToJson(defaultList.children));
-	});
+
+		saveBtn.addEventListener('click', e => {
+			localStorage.setItem('filteredList', dataToJson(filteredList.children));
+		});
+	})();
 
 	// Searching
-	mainContainer.addEventListener('keyup', e => {
+	( () => {
+
+		function isValid(input, str) {
+			for(let i = 0; i < input.length; i++) {
+				if(str[i] !== input[i]) return false
+			}
+			return true;
+		}
 
 		function searchingOutput(input, list) {
-			let searchRes = [].filter.call(list, elem => {
+			let searchRes = Array.prototype.filter.call(list, elem => {
 				let firstName = elem.children[1].textContent.split(' ')[0].toLowerCase(),
 						lastName = elem.children[1].textContent.split(' ')[1].toLowerCase();
-
-				function isValid(str) {
-					for(let i = 0; i < input.length; i++) {
-						if(str[i] !== input[i]) return false
-					}
-					return true;
+				if(input.includes(' ')) {
+					let inputComponents = input.split(' ');
+				 	return 	isValid(inputComponents[0], firstName) && isValid(inputComponents[1], lastName);
+				} else {
+				 return isValid(input, firstName) || isValid(input, lastName);
 				}
-					
-				return isValid(firstName) || isValid(lastName);
 			});
 			if(input.length === 0) {
-				list = [].forEach.call(list, elem => {
+				list = Array.prototype.forEach.call(list, elem => {
 					elem.removeAttribute('style');
 				});
 			} else {
-				list = [].forEach.call(list, elem => {
+				list = Array.prototype.forEach.call(list, elem => {
 					elem.style.display = 'none';
 					if(searchRes.includes(elem)) elem.removeAttribute('style')
 				});
 			}
 		}
 
-		if(e.target.getAttribute('name') === 'defaultListSearch') {
-			let inputContent = e.target.value.toLowerCase().trim(),
-					list = defaultList.children;
-			searchingOutput(inputContent, list);
-		} else if(e.target.getAttribute('name') === 'filteredListSearch') {
-			let inputContent = e.target.value.toLowerCase().trim(),
-					list = filteredList.children;
-			searchingOutput(inputContent, list);
-		}
+		mainContainer.addEventListener('keyup', e => {
+			if(e.target.getAttribute('name') === 'defaultListSearch') {
+				let inputContent = e.target.value.toLowerCase().trim(),
+						list = defaultList.children;
+				searchingOutput(inputContent, list);
+			} else if(e.target.getAttribute('name') === 'filteredListSearch') {
+				let inputContent = e.target.value.toLowerCase().trim(),
+						list = filteredList.children;
+				searchingOutput(inputContent, list);
+			}
 		
-	});
+		});
+	})();
 
 	return new Promise( (resolve, reject) => {
 		VK.api('friends.get', {fields: ['photo_50']}, response => {
@@ -152,13 +160,21 @@ new Promise( resolve => {
 				reject(new Error(response.error.error_msg));
 			} else {
 				if(localStorage.getItem('filteredList')) {
-					let selected = JSON.parse(localStorage.getItem('filteredList')),
-							// notSelected = JSON.parse(localStorage.getItem('defaultList'));
+
+					function filterResponse(item, storedData) {
+						for(let storedItem of storedData) {
+							if(item.first_name === storedItem.first_name &&
+								 item.last_name === storedItem.last_name) return false
+							}
+						return true;
+					}
+
+					let stored = JSON.parse(localStorage.getItem('filteredList')),
 							notSelected = response.response.filter( item => {
-								for(let selItem of selected) {
-									if(item.photo_50 === selItem.photo_50) return false
-								}
-								return true;
+								return filterResponse(item, stored);
+							}),
+							selected = response.response.filter( item => {
+								return !filterResponse(item, stored);
 							});
 					let source = friendListTemplate.innerHTML,
 						template = Handlebars.compile(source),
